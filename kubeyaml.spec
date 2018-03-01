@@ -3,8 +3,8 @@
 block_cipher = None
 
 
-a = Analysis(['main.py'],
-             pathex=['/Users/mikeb/space/kube-update'],
+a = Analysis(['kubeyaml.py'],
+             pathex=['/Users/mikeb/space/kubeyaml'],
              binaries=[],
              datas=[],
              hiddenimports=[],
@@ -19,7 +19,7 @@ pyz = PYZ(a.pure, a.zipped_data,
 exe = EXE(pyz,
           a.scripts,
           exclude_binaries=True,
-          name='main',
+          name='kubeyaml',
           debug=False,
           strip=False,
           upx=True,
@@ -30,4 +30,4 @@ coll = COLLECT(exe,
                a.datas,
                strip=False,
                upx=True,
-               name='main')
+               name='kubeyaml')
