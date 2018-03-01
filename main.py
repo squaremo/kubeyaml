@@ -21,18 +21,23 @@ def main():
         bail("Argument --image required")
 
     yaml = YAML()
-    manifest = yaml.load(sys.stdin)
-    c = find_container(args, manifest)
-    if c is None:
-        bail("container not found")
-    c['image'] = args.image
-    yaml.dump(manifest, sys.stdout)
+    yaml.explicit_start = True
+
+    found = False
+    for manifest in yaml.load_all(sys.stdin):
+        c = find_container(args, manifest)
+        if c != None:
+            c['image'] = args.image
+            found = True
+        yaml.dump(manifest, sys.stdout)
+    if not found:
+        bail("Container not found")
 
 def find_container(spec, manifest):
     if manifest['kind'] != spec.kind:
-        bail("kind in manifest does not match that given")
+        return None
     if manifest['metadata']['name'] != spec.name:
-        bail("name in manifest does not match that given")
+        return None
     for c in manifest['spec']['template']['spec']['containers']:
         if c['name'] == spec.container:
             return c
