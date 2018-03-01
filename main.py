@@ -24,14 +24,24 @@ def main():
     yaml.explicit_start = True
 
     found = False
-    for manifest in yaml.load_all(sys.stdin):
-        c = find_container(args, manifest)
-        if c != None:
-            c['image'] = args.image
-            found = True
-        yaml.dump(manifest, sys.stdout)
+    for doc in yaml.load_all(sys.stdin):
+        if not found:
+            for m in manifests(doc):
+                c = find_container(args, m)
+                if c != None:
+                    c['image'] = args.image
+                    found = True
+                    break
+        yaml.dump(doc, sys.stdout)
     if not found:
         bail("Container not found")
+
+def manifests(doc):
+    if doc['kind'] == 'List':
+        for m in doc['items']:
+            yield m
+    else:
+        yield doc
 
 def find_container(spec, manifest):
     if manifest['kind'] != spec.kind:
