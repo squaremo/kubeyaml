@@ -4,13 +4,13 @@ block_cipher = None
 
 
 a = Analysis(['kubeyaml.py'],
-             pathex=['/Users/mikeb/space/kubeyaml'],
-             binaries=[],
-             datas=[],
+             pathex=['/src'],
+             binaries=None,
+             datas=None,
              hiddenimports=[],
              hookspath=[],
              runtime_hooks=[],
-             excludes=[],
+             excludes=['pycrypto', 'PyInstaller'],
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher)

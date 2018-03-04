@@ -8,8 +8,10 @@ clean:
 	rm -r dist
 
 kubeyaml.tar.gz: kubeyaml.py kubeyaml.spec
-	docker run --rm -v "$(shell pwd):/src/" cdrx/pyinstaller-linux:python3
-	tar -C dist/linux/kubeyaml -cz -f "$@" .
+	docker run --rm -v "$(shell pwd):/src/" six8/pyinstaller-alpine \
+		--noconfirm \
+		kubeyaml.py
+	tar -C dist/kubeyaml -cz -f "$@" .
 
 .uptodate.kubeyaml: kubeyaml.tar.gz Dockerfile
 	docker build -t squaremo/kubeyaml .
