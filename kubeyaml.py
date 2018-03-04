@@ -44,7 +44,8 @@ def manifests(doc):
         yield doc
 
 def find_container(spec, manifest):
-    if manifest['kind'] != spec.kind:
+    # NB treat the Kind as case-insensitive
+    if manifest['kind'].lower() != spec.kind.lower():
         return None
     if manifest['metadata']['name'] != spec.name:
         return None
