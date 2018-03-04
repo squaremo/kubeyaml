@@ -12,7 +12,7 @@ def parse_args():
     return p.parse_args()
 
 def bail(reason):
-        print >> sys.stderr, reason
+        sys.stderr.write(reason); sys.stderr.write('\n')
         sys.exit(2)
 
 def main():
