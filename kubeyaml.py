@@ -68,7 +68,15 @@ def update_annotations(spec):
                 if match_manifest(spec, m):
                     notes = ensure(m, 'metadata', 'annotations')
                     for k, v in spec.notes:
-                        notes[k] = v
+                        if v == '':
+                            try:
+                                del notes[k]
+                            except KeyError:
+                                pass
+                        else:
+                            notes[k] = v
+                    if len(notes) == 0:
+                        del m['metadata']['annotations']
                     found = True
                     break
         yaml.dump(doc, sys.stdout)
@@ -87,7 +95,7 @@ def match_manifest(spec, manifest):
         # NB treat the Kind as case-insensitive
         if manifest['kind'].lower() != spec.kind.lower():
             return False
-        if manifest['metadata']['namespace'] != spec.namespace:
+        if manifest['metadata'].get('namespace', 'default') != spec.namespace:
             return False
         if manifest['metadata']['name'] != spec.name:
             return False
