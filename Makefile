@@ -11,5 +11,5 @@ clean:
 .uptodate.kubeyaml: Dockerfile kubeyaml.py requirements.txt
 	mkdir -p build
 	cp $^ build/
-	docker build -t squaremo/kubeyaml ./build/
+	docker build -t quay.io/squaremo/kubeyaml ./build/
 	touch $@
