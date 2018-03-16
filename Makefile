@@ -17,4 +17,4 @@ clean:
 test: setup.py
 	virtualenv venv
 	. venv/bin/activate
-	python setup.py test
+	pytest
