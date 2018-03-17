@@ -1,6 +1,6 @@
 import kubeyaml
 
-from hypothesis import given, strategies as strats
+from hypothesis import given, assume, strategies as strats
 from hypothesis.strategies import composite
 
 def strip(s):
@@ -102,14 +102,19 @@ def test_match_self(man):
     spec.namespace=man['metadata'].get('namespace', 'default')
     assert kubeyaml.match_manifest(spec, man)
 
-@given(manifests())
-def test_find_container(man):
+@given(manifests(), strats.data())
+def test_find_container(man, data):
     spec = Spec()
     spec.kind=man['kind']
     spec.name=man['metadata']['name']
     # The namespace is always given in the spec
     spec.namespace=man['metadata'].get('namespace', 'default')
-    spec.container = 'foo'
+
+    cs = kubeyaml.containers(man)
+    assume(len(cs) > 0)
+
+    ind = data.draw(strats.integers(min_value=0, max_value=len(cs) - 1))
+    spec.container = cs[ind]['name']
 
     # Just check it doesn't crash for now
-    kubeyaml.find_container(spec, man)
+    assert kubeyaml.find_container(spec, man) is not None
