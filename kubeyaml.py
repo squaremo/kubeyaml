@@ -102,11 +102,16 @@ def match_manifest(spec, manifest):
     except KeyError:
         return False
     return True
-        
+
+def containers(manifest):
+    if manifest['kind'] == 'CronJob':
+        return manifest['spec']['jobTemplate']['spec']['template']['spec']['containers']
+    return manifest['spec']['template']['spec']['containers']
+
 def find_container(spec, manifest):
     if not match_manifest(spec, manifest):
         return None
-    for c in manifest['spec']['template']['spec']['containers']:
+    for c in containers(manifest):
         if c['name'] == spec.container:
             return c
     return None
