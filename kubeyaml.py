@@ -27,16 +27,28 @@ def parse_args():
 
     return p.parse_args()
 
+def yaml():
+    y = YAML()
+    y.explicit_start = True
+    return y
+
 def bail(reason):
         sys.stderr.write(reason); sys.stderr.write('\n')
         sys.exit(2)
 
-def update_image(args):
-    yaml = YAML()
-    yaml.explicit_start = True
+def apply_to_yaml_stream(fn, args):
+    yaml = yaml()
+    docs = yaml.load_all(sys.stdin)
+    try:
+        for doc in fn(args, docs):
+            yaml.dump(doc, sys.stdout)
+    except:
+        bail("manifest not found")
 
+def update_image(args, docs):
+    """Update the manifest specified by args, in the stream of docs"""
     found = False
-    for doc in yaml.load_all(sys.stdin):
+    for doc in docs:
         if not found:
             for m in manifests(doc):
                 c = find_container(args, m)
@@ -44,14 +56,11 @@ def update_image(args):
                     c['image'] = args.image
                     found = True
                     break
-        yaml.dump(doc, sys.stdout)
+        yield doc
     if not found:
-        bail("Container not found")
+        raise "not found"
 
-def update_annotations(spec):
-    yaml = YAML()
-    yaml.explicit_start = True
-
+def update_annotations(spec, docs):
     def ensure(d, *keys):
         for k in keys:
             try:
@@ -62,7 +71,7 @@ def update_annotations(spec):
         return d
 
     found = False
-    for doc in yaml.load_all(sys.stdin):
+    for doc in docs:
         if not found:
             for m in manifests(doc):
                 if match_manifest(spec, m):
@@ -79,9 +88,9 @@ def update_annotations(spec):
                         del m['metadata']['annotations']
                     found = True
                     break
-        yaml.dump(doc, sys.stdout)
+        yield doc
     if not found:
-        bail("Container not found")
+        raise "not found"
 
 def manifests(doc):
     if doc['kind'] == 'List':
@@ -118,7 +127,7 @@ def find_container(spec, manifest):
 
 def main():
     args = parse_args()
-    args.func(args)
+    apply_to_yaml_stream(args.func, args)
 
 if __name__ == "__main__":
     main()
