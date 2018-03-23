@@ -90,31 +90,54 @@ def manifests(draw):
     return base
 
 class Spec:
+    def __init__(self, kind=None, namespace=None, name=None):
+        if kind is not None:
+            self.kind = kind
+        if namespace is not None:
+            self.namespace = namespace
+        if name is not None:
+            self.name = name
+
+    @staticmethod
+    def from_manifest(man):
+        return Spec(kind=man['kind'],
+                    # The namespace is always given in the spec
+                    namespace=man['metadata'].get('namespace', 'default'),
+                    name=man['metadata']['name'])
+
     def __repr__(self):
         return "Spec(kind=%s,name=%s,namespace=%s)" % (self.kind, self.name, self.namespace)
 
 @given(manifests())
 def test_match_self(man):
-    spec = Spec()
-    spec.kind=man['kind']
-    spec.name=man['metadata']['name']
-    # The namespace is always given in the spec
-    spec.namespace=man['metadata'].get('namespace', 'default')
+    spec = Spec.from_manifest(man)
     assert kubeyaml.match_manifest(spec, man)
 
 @given(manifests(), strats.data())
 def test_find_container(man, data):
-    spec = Spec()
-    spec.kind=man['kind']
-    spec.name=man['metadata']['name']
-    # The namespace is always given in the spec
-    spec.namespace=man['metadata'].get('namespace', 'default')
-
     cs = kubeyaml.containers(man)
     assume(len(cs) > 0)
 
+    spec = Spec.from_manifest(man)
     ind = data.draw(strats.integers(min_value=0, max_value=len(cs) - 1))
     spec.container = cs[ind]['name']
 
-    # Just check it doesn't crash for now
     assert kubeyaml.find_container(spec, man) is not None
+
+@given(manifests(), image_names())
+def test_image_update(man, image):
+    cs = kubeyaml.containers(man)
+    assume(len(cs) > 0)
+
+    args = Spec.from_manifest(man)
+    args.image = image
+    args.container = cs[0]['name']
+
+    found = False
+    for out in kubeyaml.update_image(args, []):
+        found = True
+        assert(kubeyaml.match_manifest(args, out))
+        outcs = kubeyaml.containers(out)
+        assert(len(outcs) == len(cs))
+        assert(outcs[0]['image'] == image)
+    assert(found)
