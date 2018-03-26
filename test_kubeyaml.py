@@ -14,15 +14,14 @@ dns_labels = strats.from_regex(
 # Image names (excluding digests for now)
 # https://github.com/docker/distribution/blob/docker/1.13/reference/reference.go
 
-host_components = strats.from_regex(r"^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])$").map(strip)
+host_components = strats.from_regex(r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,125}[a-zA-Z0-9])?$").map(strip)
 port_numbers = strats.integers(min_value=1, max_value=32767)
 
-hostnames_without_port = strats.builds(
-    lambda cs: '.'.join(cs),
+hostnames_without_port = strats.builds('.'.join,
     strats.lists(elements=host_components, min_size=1, average_size=3))
 
 hostnames_with_port = strats.builds(
-    lambda h, p: h + ':' + str(p),
+    lambda h, p: str(h, ':', p),
     hostnames_without_port, port_numbers)
 
 hostnames = strats.one_of(hostnames_without_port, hostnames_with_port)
@@ -73,7 +72,7 @@ def manifests(draw):
     if namespace != '':
         metadata['namespace'] = namespace
 
-    containers = draw(strats.lists(
+    containers = draw(strats.lists(max_size=5, average_size=2,
         elements=strats.builds(Container, dns_labels, images_with_tag)))
     podtemplate = {'template': {'spec': {'containers': containers}}}
 
