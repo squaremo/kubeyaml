@@ -134,7 +134,7 @@ def test_image_update(man, image):
     args.container = cs[0]['name']
 
     found = False
-    for out in kubeyaml.update_image(args, []):
+    for out in kubeyaml.update_image(args, [man]):
         found = True
         assert(kubeyaml.match_manifest(args, out))
         outcs = kubeyaml.containers(out)

@@ -2,6 +2,9 @@ import sys
 import argparse
 from ruamel.yaml import YAML
 
+class NotFound(Exception):
+    pass
+
 def parse_args():
     p = argparse.ArgumentParser()
     subparsers = p.add_subparsers()
@@ -42,7 +45,7 @@ def apply_to_yaml_stream(fn, args):
     try:
         for doc in fn(args, docs):
             yaml.dump(doc, sys.stdout)
-    except:
+    except NotFound:
         bail("manifest not found")
 
 def update_image(args, docs):
@@ -58,7 +61,7 @@ def update_image(args, docs):
                     break
         yield doc
     if not found:
-        raise "not found"
+        raise NotFound()
 
 def update_annotations(spec, docs):
     def ensure(d, *keys):
@@ -90,7 +93,7 @@ def update_annotations(spec, docs):
                     break
         yield doc
     if not found:
-        raise "not found"
+        raise NotFound()
 
 def manifests(doc):
     if doc['kind'] == 'List':
