@@ -17,6 +17,7 @@ jobs:
       - checkout
       - setup_remote_docker
 
+      - run: make test
       - run: make
 
       - deploy:
