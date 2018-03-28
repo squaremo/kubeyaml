@@ -16,8 +16,12 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker
+      - run: |
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install -r requirements.txt
+          make test
 
-      - run: make test
       - run: make
 
       - deploy:

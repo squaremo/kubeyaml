@@ -14,7 +14,5 @@ clean:
 	docker build -t quay.io/squaremo/kubeyaml ./build/
 	touch $@
 
-test: setup.py
-	virtualenv venv
-	. venv/bin/activate
+test:
 	pytest
