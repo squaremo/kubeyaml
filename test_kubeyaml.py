@@ -24,7 +24,7 @@ host_components = strats.from_regex(r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,125}[a-zA-Z0-9
 port_numbers = strats.integers(min_value=1, max_value=32767)
 
 hostnames_without_port = strats.builds('.'.join,
-    strats.lists(elements=host_components, min_size=1, average_size=3))
+    strats.lists(elements=host_components, min_size=1, max_size=6))
 
 hostnames_with_port = strats.builds(
     lambda h, p: str(h, ':', p),
@@ -70,11 +70,16 @@ def image_components(draw):
 
 image_names = strats.builds(lambda cs: '/'.join(cs),
                             strats.lists(elements=image_components(),
-                                         min_size=1, average_size=3))
+                                         min_size=1, max_size=6))
 
 images_with_tag = strats.builds(
     lambda name, tag: name + ':' + tag,
     image_names, image_tags)
+
+# This is somewhat faster, if we don't care about having realistic
+# image refs
+sloppy_images_with_tag = strats.text(string.ascii_letters + '-/_', min_size=1, max_size=255)
+images_with_tag = sloppy_images_with_tag
 
 # Kubernetes manifests
 # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.9/
@@ -128,7 +133,7 @@ def manifests(draw):
         metadata['namespace'] = namespace
 
     container_names = draw(strats.sets(min_size=1, max_size=5, elements=dns_labels))
-    containers = list(map(lambda n: container(n, draw(image_names)), container_names))
+    containers = list(map(lambda n: container(n, draw(images_with_tag)), container_names))
     podtemplate = {'template': {'spec': {'containers': containers}}}
 
     base = {
@@ -176,7 +181,7 @@ def test_find_container(man, data):
 
     assert kubeyaml.find_container(spec, man) is not None
 
-@given(manifests(), image_names, strats.data())
+@given(manifests(), images_with_tag, strats.data())
 def test_image_update(man, image, data):
     cs = kubeyaml.containers(man)
     assume(len(cs) > 0)
@@ -228,7 +233,7 @@ def test_update_image_apply(mans, data):
     indc = data.draw(strats.integers(min_value=0, max_value=len(containers)-1))
     spec = Spec.from_manifest(man)
     spec.container = containers[indc]['name']
-    spec.image = data.draw(image_names)
+    spec.image = data.draw(images_with_tag)
 
     infile, outfile = StringIO(originalstr), StringIO()
     kubeyaml.apply_to_yaml(lambda ds: kubeyaml.update_image(spec, ds), infile, outfile)
