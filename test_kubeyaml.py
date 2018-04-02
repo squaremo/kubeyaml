@@ -85,16 +85,18 @@ def containers_equal(cs1, cs2):
         pass
     return False
 
+manifest_ids = strats.builds(lambda k, ns, n: (k, ns, n), kinds, dns_labels, namespaces)
+
 @composite
 def manifests(draw):
-    kind, name, namespace = draw(kinds), draw(dns_labels), draw(namespaces)
+    kind, name, namespace = draw(manifest_ids)
     metadata = dict()
     metadata['name'] = name
     if namespace != '':
         metadata['namespace'] = namespace
 
     container_names = draw(strats.sets(max_size=5, average_size=2, elements=dns_labels))
-    containers = map(lambda n: container(n, draw(image_names)), container_names)
+    containers = list(map(lambda n: container(n, draw(image_names)), container_names))
     podtemplate = {'template': {'spec': {'containers': containers}}}
 
     base = {
