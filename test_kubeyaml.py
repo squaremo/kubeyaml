@@ -2,6 +2,7 @@ import kubeyaml
 
 from hypothesis import given, assume, strategies as strats
 from hypothesis.strategies import composite
+from ruamel.yaml.compat import StringIO
 
 def strip(s):
     return s.strip()
@@ -164,3 +165,18 @@ def test_image_update(man, image, data):
         assert(len(outcs) == len(cs))
         assert(outcs[ind]['image'] == image)
     assert(found)
+
+@given(strats.lists(elements=manifests(), max_size=5))
+def test_identity_stream(mans):
+    yaml = kubeyaml.yaml()
+    original = StringIO()
+    for man in mans:
+        yaml.dump(man, original)
+    infile = StringIO(original.getvalue())
+    outfile = StringIO()
+
+    def ident(args, docs):
+        return docs
+
+    kubeyaml.apply_to_yaml_stream(ident, None, infile, outfile)
+    assert original.getvalue() == outfile.getvalue()

@@ -39,14 +39,12 @@ def bail(reason):
         sys.stderr.write(reason); sys.stderr.write('\n')
         sys.exit(2)
 
-def apply_to_yaml_stream(fn, args):
-    yaml = yaml()
-    docs = yaml.load_all(sys.stdin)
-    try:
-        for doc in fn(args, docs):
-            yaml.dump(doc, sys.stdout)
-    except NotFound:
-        bail("manifest not found")
+def apply_to_yaml_stream(fn, args, infile, outfile):
+    # fn :: args -> iterator a -> iterator b
+    y = yaml()
+    docs = y.load_all(infile)
+    for doc in fn(args, docs):
+        y.dump(doc, outfile)
 
 def update_image(args, docs):
     """Update the manifest specified by args, in the stream of docs"""
@@ -130,7 +128,10 @@ def find_container(spec, manifest):
 
 def main():
     args = parse_args()
-    apply_to_yaml_stream(args.func, args)
+    try:
+        apply_to_yaml_stream(args.func, args, sys.stdin, sys.stdout)
+    except NotFound:
+        bail("manifest not found")
 
 if __name__ == "__main__":
     main()
