@@ -45,14 +45,13 @@ def image_components(draw):
         s = s + sep + c
     return s
 
-def image_names():
-    return strats.builds(lambda cs: '/'.join(cs),
-                         strats.lists(elements=image_components(),
-                                      min_size=1, average_size=3))
+image_names = strats.builds(lambda cs: '/'.join(cs),
+                            strats.lists(elements=image_components(),
+                                         min_size=1, average_size=3))
 
 images_with_tag = strats.builds(
     lambda name, tag: name + ':' + tag,
-    image_names(), image_tags)
+    image_names, image_tags)
 
 # Kubernetes manifests
 # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.9/
@@ -60,9 +59,31 @@ images_with_tag = strats.builds(
 kinds = strats.sampled_from(['Deployment', 'DaemonSet', 'StatefulSet', 'CronJob'])
 namespaces = strats.one_of(strats.just(''), dns_labels)
 
-def Container(name, image):
+def container(name, image):
     # TODO(michael): more to go here
     return dict(name=name, image=image)
+
+def manifests_equal(man1, man2):
+    try:
+        if man1['kind'] != man2['kind']: return False
+        meta1, meta2 = man1['metadata'], man2['metadata']
+        if meta1.get('namespace', None) != meta2.get('namespace', None): return False
+        if meta1['name'] != meta2['name']: return False
+        return containers_equal(kubeyaml.containers(man1), kubeyaml.containers(man2))
+    except KeyError:
+        pass
+    return False
+
+def containers_equal(cs1, cs2):
+    try:
+        if len(cs1) != len(cs2): return False
+        for c1, c2 in zip(cs1, cs2):
+            if c1['name'] != c2['name']: return False
+            if c2['image'] != c2['image']: return False
+        return True
+    except KeyError:
+        pass
+    return False
 
 @composite
 def manifests(draw):
@@ -72,8 +93,8 @@ def manifests(draw):
     if namespace != '':
         metadata['namespace'] = namespace
 
-    containers = draw(strats.lists(max_size=5, average_size=2,
-        elements=strats.builds(Container, dns_labels, images_with_tag)))
+    container_names = draw(strats.sets(max_size=5, average_size=2, elements=dns_labels))
+    containers = map(lambda n: container(n, draw(image_names)), container_names)
     podtemplate = {'template': {'spec': {'containers': containers}}}
 
     base = {
@@ -123,14 +144,15 @@ def test_find_container(man, data):
 
     assert kubeyaml.find_container(spec, man) is not None
 
-@given(manifests(), image_names())
-def test_image_update(man, image):
+@given(manifests(), image_names, strats.data())
+def test_image_update(man, image, data):
     cs = kubeyaml.containers(man)
     assume(len(cs) > 0)
 
     args = Spec.from_manifest(man)
     args.image = image
-    args.container = cs[0]['name']
+    ind = data.draw(strats.integers(min_value=0, max_value=len(cs) - 1))
+    args.container = cs[ind]['name']
 
     found = False
     for out in kubeyaml.update_image(args, [man]):
@@ -138,5 +160,5 @@ def test_image_update(man, image):
         assert(kubeyaml.match_manifest(args, out))
         outcs = kubeyaml.containers(out)
         assert(len(outcs) == len(cs))
-        assert(outcs[0]['image'] == image)
+        assert(outcs[ind]['image'] == image)
     assert(found)
