@@ -167,7 +167,7 @@ def test_image_update(man, image, data):
     assert(found)
 
 @given(strats.lists(elements=manifests(), max_size=5))
-def test_identity_stream(mans):
+def test_ident_apply(mans):
     yaml = kubeyaml.yaml()
     original = StringIO()
     for man in mans:
@@ -175,8 +175,9 @@ def test_identity_stream(mans):
     infile = StringIO(original.getvalue())
     outfile = StringIO()
 
-    def ident(args, docs):
-        return docs
+    def ident(docs):
+        for d in docs:
+            yield d
 
-    kubeyaml.apply_to_yaml_stream(ident, None, infile, outfile)
+    kubeyaml.apply_to_yaml(ident, infile, outfile)
     assert original.getvalue() == outfile.getvalue()
