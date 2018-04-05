@@ -72,28 +72,57 @@ image_names = strats.builds(lambda cs: '/'.join(cs),
                             strats.lists(elements=image_components(),
                                          min_size=1, max_size=6))
 
+# This is somewhat faster, if we don't care about having realistic
+# image refs
+sloppy_image_names = strats.text(string.ascii_letters + '-/_', min_size=1, max_size=255)
+image_names = sloppy_image_names
+
 images_with_tag = strats.builds(
     lambda name, tag: name + ':' + tag,
     image_names, image_tags)
-
-# This is somewhat faster, if we don't care about having realistic
-# image refs
-sloppy_images_with_tag = strats.text(string.ascii_letters + '-/_', min_size=1, max_size=255)
-images_with_tag = sloppy_images_with_tag
 
 # Kubernetes manifests
 # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.9/
 
 controller_kinds = ['Deployment', 'DaemonSet', 'StatefulSet', 'CronJob']
+other_kinds = ['Service', 'ConfigMap', 'Secret']
 
-kinds = strats.sampled_from(controller_kinds)
 namespaces = strats.just('') | dns_labels
+
+def resource(kind, namespace, name):
+    """Make a basic resource manifest, given the identifying fields.
+    """
+    metadata = {'name': name}
+    if namespace != '':
+        metadata['namespace'] = namespace
+
+    return {
+        'kind': kind,
+        'metadata': metadata,
+    }
+
+def resource_from_tuple(t):
+    k, ns, n = t
+    return resource(k, ns, n)
+
+def list_document(resources):
+    return {
+        'kind': 'List',
+        'items': resources,
+    }
+
+def resource_id(man):
+    """These three return values identify a resource uniquely"""
+    kind = man['kind']
+    ns = man['metadata'].get('namespace', 'default')
+    name = man['metadata']['name']
+    return kind, ns, name
 
 def container(name, image):
     # TODO(michael): more to go here
     return dict(name=name, image=image)
 
-def manifests_equal(man1, man2):
+def controllers_equal(man1, man2):
     try:
         if man1['kind'] != man2['kind']: return False
         meta1, meta2 = man1['metadata'], man2['metadata']
@@ -115,38 +144,31 @@ def containers_equal(cs1, cs2):
         pass
     return False
 
-def manifest_id(man):
-    """These three values identify a resource uniquely"""
-    kind = man['kind']
-    ns = man['metadata'].get('namespace', 'default')
-    name = man['metadata']['name']
-    return kind, ns, name
+def ids(kinds):
+    return strats.tuples(strats.sampled_from(kinds), namespaces, dns_labels)
 
-manifest_ids = strats.tuples(kinds, dns_labels, namespaces)
+controller_ids = ids(controller_kinds)
 
 @composite
-def manifests(draw):
-    kind, name, namespace = draw(manifest_ids)
-    metadata = dict()
-    metadata['name'] = name
-    if namespace != '':
-        metadata['namespace'] = namespace
+def controller_resources(draw):
+    kind, ns, name = draw(controller_ids)
+    base = resource(kind, ns, name)
 
     container_names = draw(strats.sets(min_size=1, max_size=5, elements=dns_labels))
     containers = list(map(lambda n: container(n, draw(images_with_tag)), container_names))
     podtemplate = {'template': {'spec': {'containers': containers}}}
 
-    base = {
-        'kind': kind,
-        'metadata': metadata,
-    }
-
-    if kind == 'CronJob':
+    if base['kind'] == 'CronJob':
         base['spec'] = {'jobTemplate': {'spec': podtemplate}}
     else:
         base['spec'] = podtemplate
 
     return base
+
+other_resources = strats.builds(resource_from_tuple, ids(other_kinds))
+
+resources = controller_resources() | other_resources
+documents = resources | strats.builds(list_document, strats.lists(resources, max_size=6))
 
 class Spec:
     def __init__(self, kind=None, namespace=None, name=None):
@@ -158,35 +180,35 @@ class Spec:
             self.name = name
 
     @staticmethod
-    def from_manifest(man):
-        (kind, ns, name) = manifest_id(man)
+    def from_resource(man):
+        (kind, ns, name) = resource_id(man)
         return Spec(kind=kind, namespace=ns, name=name)
 
     def __repr__(self):
         return "Spec(kind=%s,name=%s,namespace=%s)" % (self.kind, self.name, self.namespace)
 
-@given(manifests())
+@given(controller_resources())
 def test_match_self(man):
-    spec = Spec.from_manifest(man)
+    spec = Spec.from_resource(man)
     assert kubeyaml.match_manifest(spec, man)
 
-@given(manifests(), strats.data())
+@given(controller_resources(), strats.data())
 def test_find_container(man, data):
     cs = kubeyaml.containers(man)
     assume(len(cs) > 0)
 
-    spec = Spec.from_manifest(man)
+    spec = Spec.from_resource(man)
     ind = data.draw(strats.integers(min_value=0, max_value=len(cs) - 1))
     spec.container = cs[ind]['name']
 
     assert kubeyaml.find_container(spec, man) is not None
 
-@given(manifests(), images_with_tag, strats.data())
+@given(controller_resources(), images_with_tag, strats.data())
 def test_image_update(man, image, data):
     cs = kubeyaml.containers(man)
     assume(len(cs) > 0)
 
-    args = Spec.from_manifest(man)
+    args = Spec.from_resource(man)
     args.image = image
     ind = data.draw(strats.integers(min_value=0, max_value=len(cs) - 1))
     args.container = cs[ind]['name']
@@ -200,12 +222,13 @@ def test_image_update(man, image, data):
         assert(outcs[ind]['image'] == image)
     assert(found)
 
-@given(strats.lists(elements=commented(manifests()), max_size=5))
+@given(strats.lists(elements=commented(documents), max_size=5))
 def test_ident_apply(mans):
     yaml = kubeyaml.yaml()
     original = StringIO()
     for man in mans:
         yaml.dump(man, original)
+    #print(original.getvalue())
     infile = StringIO(original.getvalue())
     outfile = StringIO()
 
@@ -216,9 +239,9 @@ def test_ident_apply(mans):
     kubeyaml.apply_to_yaml(ident, infile, outfile)
     assert original.getvalue() == outfile.getvalue()
 
-@given(strats.lists(elements=commented(manifests()), min_size=1, max_size=5), strats.data())
+@given(strats.lists(elements=commented(controller_resources()), min_size=1, max_size=5), strats.data())
 def test_update_image_apply(mans, data):
-    assume(len(mans) == len(set(map(manifest_id, mans))))
+    assume(len(mans) == len(set(map(resource_id, mans))))
 
     ind = data.draw(strats.integers(min_value=0, max_value=len(mans)-1))
 
@@ -231,7 +254,7 @@ def test_update_image_apply(mans, data):
     man = mans[ind]
     containers = kubeyaml.containers(man)
     indc = data.draw(strats.integers(min_value=0, max_value=len(containers)-1))
-    spec = Spec.from_manifest(man)
+    spec = Spec.from_resource(man)
     spec.container = containers[indc]['name']
     spec.image = data.draw(images_with_tag)
 
@@ -251,5 +274,5 @@ def test_update_image_apply(mans, data):
             assert c is not None
             assert c['image'] == spec.image
         else:
-            assert manifests_equal(mans[i], updated[i])
+            assert controllers_equal(mans[i], updated[i])
     assert found
