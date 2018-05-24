@@ -42,22 +42,6 @@ image_separators = strats.just('.')  | \
 image_tags = strats.from_regex(r"^[\w][\w.-]{0,127}$").map(strip)
 
 @composite
-def commented(draw, values):
-    from ruamel.yaml.comments import CommentedMap
-    comments = strats.none() | strats.text(printable, min_size=1)
-
-    val = draw(values)
-    if type(val) is dict:
-        commentedval = CommentedMap()
-        i = 0
-        for k in val.keys():
-            comment = draw(comments)
-            commentedval.insert(i, k, val[k], comment=comment)
-            i = i + 1
-        val = commentedval
-    return val
-
-@composite
 def image_components(draw):
     bits = draw(strats.lists(
         elements=strats.text(alphabet=alphanumerics, min_size=1),
@@ -222,14 +206,42 @@ def test_image_update(man, image, data):
         assert(outcs[ind]['image'] == image)
     assert(found)
 
-@given(strats.lists(elements=commented(documents), max_size=5))
-def test_ident_apply(mans):
+def comment_yaml(draw, yamlstr):
+    """Serialise the values and add comments"""
+    comments = strats.none() | \
+               strats.text(printable).map(lambda s: '#' + s)
+    res = ''
+    prevLine = ''
+    for line in yamlstr.splitlines():
+        # special cases:
+        #  - don't put comments before or on the same line as document delimiters
+        if line == '---':
+            res = res + line + '\n'
+            continue
+        #  - don't put a line comment before the first item in a list,
+        #    because this breaks ruamel
+        elif line.lstrip().startswith('-') and not prevLine.lstrip().startswith('-'):
+            res = res + line
+        else:
+            lineBefore = draw(comments)
+            if lineBefore is not None:
+                res = res + lineBefore + '\n'
+            res = res + line
+        eol = draw(comments)
+        if eol is not None:
+            res = res + ' ' + eol
+        res = res + '\n'
+        prevLine = line
+    return res
+
+@given(strats.lists(elements=documents, max_size=5), strats.data())
+def test_ident_apply(mans, data):
     yaml = kubeyaml.yaml()
     original = StringIO()
     for man in mans:
         yaml.dump(man, original)
-    #print(original.getvalue())
-    infile = StringIO(original.getvalue())
+    originalstr = comment_yaml(data.draw, original.getvalue())
+    infile = StringIO(originalstr)
     outfile = StringIO()
 
     def ident(docs):
@@ -237,9 +249,9 @@ def test_ident_apply(mans):
             yield d
 
     kubeyaml.apply_to_yaml(ident, infile, outfile)
-    assert original.getvalue() == outfile.getvalue()
+    assert originalstr == outfile.getvalue()
 
-@given(strats.lists(elements=commented(controller_resources()), min_size=1, max_size=5), strats.data())
+@given(strats.lists(elements=controller_resources(), min_size=1, max_size=5), strats.data())
 def test_update_image_apply(mans, data):
     assume(len(mans) == len(set(map(resource_id, mans))))
 
