@@ -34,6 +34,7 @@ def parse_args():
 def yaml():
     y = YAML()
     y.explicit_start = True
+    y.preserve_quotes = True
     return y
 
 def bail(reason):
