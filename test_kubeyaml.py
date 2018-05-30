@@ -69,6 +69,7 @@ images_with_tag = strats.builds(
 # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.9/
 
 controller_kinds = ['Deployment', 'DaemonSet', 'StatefulSet', 'CronJob']
+custom_kinds = ['FluxHelmRelease']
 other_kinds = ['Service', 'ConfigMap', 'Secret']
 
 namespaces = strats.just('') | dns_labels
@@ -149,9 +150,23 @@ def controller_resources(draw):
 
     return base
 
+@composite
+def custom_resources(draw):
+    kind, ns, name = draw(ids(custom_kinds))
+    base = resource(kind, ns, name)
+    chart_name = draw(dns_labels) # close enough
+    base['spec'] = {
+        'chartGitPath': chart_name,
+        'values': {
+            'image': draw(images_with_tag)
+        }
+    }
+    return base
+
+workload_resources = controller_resources() | custom_resources()
 other_resources = strats.builds(resource_from_tuple, ids(other_kinds))
 
-resources = controller_resources() | other_resources
+resources = workload_resources | other_resources
 documents = resources | strats.builds(list_document, strats.lists(resources, max_size=6))
 
 class Spec:
@@ -171,12 +186,12 @@ class Spec:
     def __repr__(self):
         return "Spec(kind=%s,name=%s,namespace=%s)" % (self.kind, self.name, self.namespace)
 
-@given(controller_resources())
+@given(workload_resources)
 def test_match_self(man):
     spec = Spec.from_resource(man)
     assert kubeyaml.match_manifest(spec, man)
 
-@given(controller_resources(), strats.data())
+@given(workload_resources, strats.data())
 def test_find_container(man, data):
     cs = kubeyaml.containers(man)
     assume(len(cs) > 0)
@@ -187,7 +202,7 @@ def test_find_container(man, data):
 
     assert kubeyaml.find_container(spec, man) is not None
 
-@given(controller_resources(), images_with_tag, strats.data())
+@given(workload_resources, images_with_tag, strats.data())
 def test_image_update(man, image, data):
     cs = kubeyaml.containers(man)
     assume(len(cs) > 0)
@@ -251,7 +266,7 @@ def test_ident_apply(mans, data):
     kubeyaml.apply_to_yaml(ident, infile, outfile)
     assert originalstr == outfile.getvalue()
 
-@given(strats.lists(elements=controller_resources(), min_size=1, max_size=5), strats.data())
+@given(strats.lists(elements=workload_resources, min_size=1, max_size=5), strats.data())
 def test_update_image_apply(mans, data):
     assume(len(mans) == len(set(map(resource_id, mans))))
 
@@ -261,7 +276,7 @@ def test_update_image_apply(mans, data):
     original = StringIO()
     for man in mans:
         yaml.dump(man, original)
-    originalstr = original.getvalue()
+    originalstr = comment_yaml(data.draw, original.getvalue())
 
     man = mans[ind]
     containers = kubeyaml.containers(man)

@@ -56,7 +56,7 @@ def update_image(args, docs):
             for m in manifests(doc):
                 c = find_container(args, m)
                 if c != None:
-                    c['image'] = args.image
+                    set_container_image(m, c, args.image)
                     found = True
                     break
         yield doc
@@ -118,6 +118,11 @@ def match_manifest(spec, manifest):
 def containers(manifest):
     if manifest['kind'] == 'CronJob':
         return manifest['spec']['jobTemplate']['spec']['template']['spec']['containers']
+    elif manifest['kind'] == 'FluxHelmRelease':
+        return [{
+            'name': manifest['spec']['chartGitPath'],
+            'image': manifest['spec']['values']['image']
+        }]
     return manifest['spec']['template']['spec']['containers']
 
 def find_container(spec, manifest):
@@ -127,6 +132,12 @@ def find_container(spec, manifest):
         if c['name'] == spec.container:
             return c
     return None
+
+def set_container_image(manifest, container, image):
+    if manifest['kind'] == 'FluxHelmRelease':
+        manifest['spec']['values']['image'] = image
+    else:
+        container['image'] = image
 
 def main():
     args = parse_args()
