@@ -3,6 +3,10 @@ import argparse
 import functools
 from ruamel.yaml import YAML
 
+# The container name, by proclamation, used for an image supplied in a
+# FluxHelmRelease
+FHR_CONTAINER = 'chart-image'
+
 class NotFound(Exception):
     pass
 
@@ -120,7 +124,7 @@ def containers(manifest):
         return manifest['spec']['jobTemplate']['spec']['template']['spec']['containers']
     elif manifest['kind'] == 'FluxHelmRelease':
         return [{
-            'name': manifest['spec']['chartGitPath'],
+            'name': FHR_CONTAINER,
             'image': manifest['spec']['values']['image']
         }]
     return manifest['spec']['template']['spec']['containers']
