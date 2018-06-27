@@ -1,6 +1,6 @@
 import kubeyaml
 
-from hypothesis import given, assume, strategies as strats
+from hypothesis import given, note, assume, strategies as strats
 from hypothesis import reproduce_failure
 from hypothesis.strategies import composite
 from ruamel.yaml.compat import StringIO
@@ -150,6 +150,10 @@ def controller_resources(draw):
 
     return base
 
+image_values = images_with_tag.map(lambda image: {'image': image})
+named_images_values = strats.dictionaries(keys=dns_labels, values=image_values)
+custom_resource_values = image_values | named_images_values
+
 @composite
 def custom_resources(draw):
     kind, ns, name = draw(ids(custom_kinds))
@@ -157,9 +161,7 @@ def custom_resources(draw):
     chart_name = draw(dns_labels) # close enough
     base['spec'] = {
         'chartGitPath': chart_name,
-        'values': {
-            'image': draw(images_with_tag)
-        }
+        'values': draw(custom_resource_values),
     }
     return base
 
@@ -237,6 +239,11 @@ def comment_yaml(draw, yamlstr):
         #    because this breaks ruamel
         elif line.lstrip().startswith('-') and not prevLine.lstrip().startswith('-'):
             res = res + line
+        #  - don't put a comment on the same line as a empty map,
+        #  - ruamel doesn't like that either
+        elif line.endswith('{}'):
+            res = res + line + '\n'
+            continue
         else:
             lineBefore = draw(comments)
             if lineBefore is not None:
@@ -271,19 +278,22 @@ def test_update_image_apply(mans, data):
     assume(len(mans) == len(set(map(resource_id, mans))))
 
     ind = data.draw(strats.integers(min_value=0, max_value=len(mans)-1))
+    man = mans[ind]
+    containers = kubeyaml.containers(man)
+    assume(len(containers) > 0)
 
     yaml = kubeyaml.yaml()
     original = StringIO()
-    for man in mans:
-        yaml.dump(man, original)
+    for m in mans:
+        yaml.dump(m, original)
     originalstr = comment_yaml(data.draw, original.getvalue())
+    note('Original:\n%s\n' % originalstr)
 
-    man = mans[ind]
-    containers = kubeyaml.containers(man)
     indc = data.draw(strats.integers(min_value=0, max_value=len(containers)-1))
     spec = Spec.from_resource(man)
     spec.container = containers[indc]['name']
     spec.image = data.draw(images_with_tag)
+    note('Spec: %r' % spec)
 
     infile, outfile = StringIO(originalstr), StringIO()
     kubeyaml.apply_to_yaml(lambda ds: kubeyaml.update_image(spec, ds), infile, outfile)

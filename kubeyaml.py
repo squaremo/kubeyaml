@@ -140,14 +140,37 @@ def set_container_image(manifest, container, image):
     else:
         container['image'] = image
 
+# There are different ways of interpreting FluxHelmRelease values as
+# images, and we have to sniff to see which to use.
 def fluxhelmrelease_containers(manifest):
-    return  [{
-        'name': FHR_CONTAINER,
-        'image': manifest['spec']['values']['image']
-    }]
+    values = manifest['spec']['values']
+    # Easiest one: the values section has a key called `image`, which
+    # has the image used somewhere in the templates. Since we don't
+    # know which container it appears in, it gets a standard name.
+    if 'image' in values:
+        return  [{
+            'name': FHR_CONTAINER,
+            'image': manifest['spec']['values']['image']
+        }]
+    # Second easiest: if there's at least one dict in values that has
+    # a key `image`, then all such dicts are treated as containers,
+    # named for their key.
+    containers = []
+    for k in values:
+        if 'image' in values[k]:
+            containers.append({'name': k, 'image': values[k]['image']})
+    return containers
 
 def set_fluxhelmrelease_container(manifest, container, image):
-    manifest['spec']['values']['image'] = image
+    values = manifest['spec']['values']
+    if 'image' in values:
+        values['image'] = image
+        return
+    for k in values:
+        if k == container['name'] and 'image' in values[k]:
+            values[k]['image'] = image
+            return
+    raise NotFound
 
 def main():
     args = parse_args()
