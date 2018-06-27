@@ -123,10 +123,7 @@ def containers(manifest):
     if manifest['kind'] == 'CronJob':
         return manifest['spec']['jobTemplate']['spec']['template']['spec']['containers']
     elif manifest['kind'] == 'FluxHelmRelease':
-        return [{
-            'name': FHR_CONTAINER,
-            'image': manifest['spec']['values']['image']
-        }]
+        return fluxhelmrelease_containers(manifest)
     return manifest['spec']['template']['spec']['containers']
 
 def find_container(spec, manifest):
@@ -139,9 +136,18 @@ def find_container(spec, manifest):
 
 def set_container_image(manifest, container, image):
     if manifest['kind'] == 'FluxHelmRelease':
-        manifest['spec']['values']['image'] = image
+        set_fluxhelmrelease_container(manifest, container, image)
     else:
         container['image'] = image
+
+def fluxhelmrelease_containers(manifest):
+    return  [{
+        'name': FHR_CONTAINER,
+        'image': manifest['spec']['values']['image']
+    }]
+
+def set_fluxhelmrelease_container(manifest, container, image):
+    manifest['spec']['values']['image'] = image
 
 def main():
     args = parse_args()
