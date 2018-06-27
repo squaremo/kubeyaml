@@ -71,6 +71,8 @@ images_with_tag = strats.builds(
 controller_kinds = ['Deployment', 'DaemonSet', 'StatefulSet', 'CronJob']
 custom_kinds = ['FluxHelmRelease']
 other_kinds = ['Service', 'ConfigMap', 'Secret']
+# For checking against
+workload_kinds = controller_kinds + custom_kinds
 
 namespaces = strats.just('') | dns_labels
 
@@ -107,16 +109,19 @@ def container(name, image):
     # TODO(michael): more to go here
     return dict(name=name, image=image)
 
-def controllers_equal(man1, man2):
+def manifests_equiv(man1, man2):
     try:
         if man1['kind'] != man2['kind']: return False
         meta1, meta2 = man1['metadata'], man2['metadata']
         if meta1.get('namespace', None) != meta2.get('namespace', None): return False
         if meta1['name'] != meta2['name']: return False
-        return containers_equal(kubeyaml.containers(man1), kubeyaml.containers(man2))
+
+        if man1['kind'] in workload_kinds:
+            return containers_equal(kubeyaml.containers(man1), kubeyaml.containers(man2))
     except KeyError:
-        pass
-    return False
+        return False
+
+    return True
 
 def containers_equal(cs1, cs2):
     try:
@@ -204,6 +209,11 @@ def test_find_container(man, data):
 
     assert kubeyaml.find_container(spec, man) is not None
 
+@given(documents)
+def test_manifests(doc):
+    for man in kubeyaml.manifests(doc):
+        assert man['kind'] != 'List'
+
 @given(workload_resources, images_with_tag, strats.data())
 def test_image_update(man, image, data):
     cs = kubeyaml.containers(man)
@@ -273,24 +283,29 @@ def test_ident_apply(mans, data):
     kubeyaml.apply_to_yaml(ident, infile, outfile)
     assert originalstr == outfile.getvalue()
 
-@given(strats.lists(elements=workload_resources, min_size=1, max_size=5), strats.data())
-def test_update_image_apply(mans, data):
-    assume(len(mans) == len(set(map(resource_id, mans))))
+@given(strats.lists(elements=documents, min_size=1, max_size=5), strats.data())
+def test_update_image_apply(docs, data):
+    originals = [man for doc in docs
+                     for man in kubeyaml.manifests(doc)]
+    workloads = [wl for wl in originals if wl['kind'] in workload_kinds]
+    assume(len(workloads) > 0)
+    # Make sure we got workloads with different IDs
+    assume(len(workloads) == len(set(map(resource_id, workloads))))
 
-    ind = data.draw(strats.integers(min_value=0, max_value=len(mans)-1))
-    man = mans[ind]
-    containers = kubeyaml.containers(man)
+    ind = data.draw(strats.integers(min_value=0, max_value=len(workloads)-1))
+    workload = workloads[ind]
+    containers = kubeyaml.containers(workload)
     assume(len(containers) > 0)
 
     yaml = kubeyaml.yaml()
     original = StringIO()
-    for m in mans:
-        yaml.dump(m, original)
+    for d in docs:
+        yaml.dump(d, original)
     originalstr = comment_yaml(data.draw, original.getvalue())
     note('Original:\n%s\n' % originalstr)
 
     indc = data.draw(strats.integers(min_value=0, max_value=len(containers)-1))
-    spec = Spec.from_resource(man)
+    spec = Spec.from_resource(workload)
     spec.container = containers[indc]['name']
     spec.image = data.draw(images_with_tag)
     note('Spec: %r' % spec)
@@ -298,18 +313,27 @@ def test_update_image_apply(mans, data):
     infile, outfile = StringIO(originalstr), StringIO()
     kubeyaml.apply_to_yaml(lambda ds: kubeyaml.update_image(spec, ds), infile, outfile)
 
-    updated = list(yaml.load_all(outfile.getvalue()))
+    # A rough check that the docs are in the same grouping into Lists,
+    # since we'll look at individual manifests, ignoring whether they
+    # are in Lists, after this.
+    updateddocs = list(yaml.load_all(outfile.getvalue()))
+    assert(len(docs) == len(updateddocs))
+    for i in range(len(docs)):
+        assert(updateddocs[i]['kind'] == docs[i]['kind'])
 
-    # the selected manifest->container has the updated image; the rest
-    # are unchanged
-    assert len(updated) == len(mans)
+    # check that the selected manifest->container has the updated
+    # image; and, the rest are unchanged.
+    updateds = [man for doc in updateddocs for man in kubeyaml.manifests(doc)]
+    assert(len(originals) == len(updateds))
+
     found = False
-    for i in range(len(mans)):
-        if kubeyaml.match_manifest(spec, updated[i]):
-            found = True
-            c = kubeyaml.find_container(spec, updated[i])
+    for i in range(len(originals)):
+        if kubeyaml.match_manifest(spec, updateds[i]):
+            assert not found, "spec matched more than one manifest"
+            c = kubeyaml.find_container(spec, updateds[i])
             assert c is not None
             assert c['image'] == spec.image
+            found = True
         else:
-            assert controllers_equal(mans[i], updated[i])
+            assert manifests_equiv(originals[i], updateds[i])
     assert found
