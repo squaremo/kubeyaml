@@ -1,6 +1,7 @@
 import sys
 import argparse
 import functools
+import collections
 from ruamel.yaml import YAML
 
 # The container name, by proclamation, used for an image supplied in a
@@ -140,6 +141,9 @@ def set_container_image(manifest, container, image):
     else:
         container['image'] = image
 
+def mappings(values):
+    return ((k, values[k]) for k in values if isinstance(values[k], collections.Mapping))
+
 # There are different ways of interpreting FluxHelmRelease values as
 # images, and we have to sniff to see which to use.
 def fluxhelmrelease_containers(manifest):
@@ -156,9 +160,9 @@ def fluxhelmrelease_containers(manifest):
     # a key `image`, then all such dicts are treated as containers,
     # named for their key.
     containers = []
-    for k in values:
-        if 'image' in values[k]:
-            containers.append({'name': k, 'image': values[k]['image']})
+    for k, v in mappings(values):
+        if 'image' in v:
+            containers.append({'name': k, 'image': v['image']})
     return containers
 
 def set_fluxhelmrelease_container(manifest, container, image):
@@ -166,9 +170,9 @@ def set_fluxhelmrelease_container(manifest, container, image):
     if 'image' in values:
         values['image'] = image
         return
-    for k in values:
-        if k == container['name'] and 'image' in values[k]:
-            values[k]['image'] = image
+    for k, v in mappings(values):
+        if k == container['name'] and 'image' in v:
+            v['image'] = image
             return
     raise NotFound
 

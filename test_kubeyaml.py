@@ -157,7 +157,17 @@ def controller_resources(draw):
 
 image_values = images_with_tag.map(lambda image: {'image': image})
 named_images_values = strats.dictionaries(keys=dns_labels, values=image_values)
-custom_resource_values = image_values | named_images_values
+
+def destructive_merge(dict1, dict2):
+    dict1.update(dict2)
+    return dict1
+
+values_noise = strats.deferred(lambda: strats.dictionaries(
+    keys=dns_labels,
+    values=values_noise | strats.integers() | strats.lists(values_noise) |
+    strats.booleans() | strats.text(printable)))
+
+custom_resource_values = strats.builds(destructive_merge, image_values | named_images_values, values_noise)
 
 @composite
 def custom_resources(draw):
@@ -240,28 +250,35 @@ def comment_yaml(draw, yamlstr):
     res = ''
     prevLine = ''
     for line in yamlstr.splitlines():
+        beforeLine = None
+        endOfLine = None
         # special cases:
         #  - don't put comments before or on the same line as document delimiters
         if line == '---':
-            res = res + line + '\n'
-            continue
+            pass
         #  - don't put a line comment before the first item in a list,
         #    because this breaks ruamel
-        elif line.lstrip().startswith('-') and not prevLine.lstrip().startswith('-'):
-            res = res + line
-        #  - don't put a comment on the same line as a empty map,
-        #  - ruamel doesn't like that either
-        elif line.endswith('{}'):
-            res = res + line + '\n'
-            continue
+        elif line.lstrip().startswith('-') and prevLine.find('-') != line.find('-'):
+            endOfLine = draw(comments)
+        #  - don't put a comment on the end of the first line of a map
+        #    block (e.g., `'0':`), because guess what.
+        elif line.endswith(':'):
+            beforeLine = draw(comments)
         else:
-            lineBefore = draw(comments)
-            if lineBefore is not None:
-                res = res + lineBefore + '\n'
-            res = res + line
-        eol = draw(comments)
-        if eol is not None:
-            res = res + ' ' + eol
+            beforeLine = draw(comments)
+            endOfLine = draw(comments)
+
+        #  - don't put comments near an inline empty map,
+        #    ruamel doesn't like that either
+        if line.endswith('{}') or line.endswith(':'):
+            beforeLine = None
+            endOfLine = None
+
+        if beforeLine is not None:
+            res = res + beforeLine + '\n'
+        res = res + line
+        if endOfLine is not None:
+            res = res + ' ' + endOfLine
         res = res + '\n'
         prevLine = line
     return res
@@ -272,7 +289,9 @@ def test_ident_apply(mans, data):
     original = StringIO()
     for man in mans:
         yaml.dump(man, original)
+    note('Uncommented:\n%s\n' % original.getvalue())
     originalstr = comment_yaml(data.draw, original.getvalue())
+    note('Commented:\n%s\n' % originalstr)
     infile = StringIO(originalstr)
     outfile = StringIO()
 
@@ -281,6 +300,7 @@ def test_ident_apply(mans, data):
             yield d
 
     kubeyaml.apply_to_yaml(ident, infile, outfile)
+    note('Ruameled: \n%s\n' % outfile.getvalue())
     assert originalstr == outfile.getvalue()
 
 @given(strats.lists(elements=documents, min_size=1, max_size=5), strats.data())
