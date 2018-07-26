@@ -120,12 +120,18 @@ def match_manifest(spec, manifest):
         return False
     return True
 
-def containers(manifest):
+def podspec(manifest):
     if manifest['kind'] == 'CronJob':
-        return manifest['spec']['jobTemplate']['spec']['template']['spec']['containers']
-    elif manifest['kind'] == 'FluxHelmRelease':
+        spec = manifest['spec']['jobTemplate']['spec']['template']['spec']
+    else:
+        spec = manifest['spec']['template']['spec']
+    return spec
+
+def containers(manifest):
+    if manifest['kind'] == 'FluxHelmRelease':
         return fluxhelmrelease_containers(manifest)
-    return manifest['spec']['template']['spec']['containers']
+    spec = podspec(manifest)
+    return spec.get('containers', []) + spec.get('initContainers', [])
 
 def find_container(spec, manifest):
     if not match_manifest(spec, manifest):

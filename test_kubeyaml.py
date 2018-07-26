@@ -145,8 +145,11 @@ def controller_resources(draw):
     base = resource(kind, ns, name)
 
     container_names = draw(strats.sets(min_size=1, max_size=5, elements=dns_labels))
+    initcontainer_names = draw(strats.sets(min_size=1, max_size=5, elements=dns_labels))
+    assume(len(container_names & initcontainer_names)==0)
     containers = list(map(lambda n: container(n, draw(images_with_tag)), container_names))
-    podtemplate = {'template': {'spec': {'containers': containers}}}
+    initcontainers = list(map(lambda n: container(n, draw(images_with_tag)), initcontainer_names))
+    podtemplate = {'template': {'spec': {'containers': containers, 'initContainers': initcontainers}}}
 
     if base['kind'] == 'CronJob':
         base['spec'] = {'jobTemplate': {'spec': podtemplate}}
@@ -154,6 +157,17 @@ def controller_resources(draw):
         base['spec'] = podtemplate
 
     return base
+
+@given(controller_resources())
+def test_includes_all_containers(man):
+    spec = kubeyaml.podspec(man)
+    assume(len(spec['initContainers']) > 0)
+    for s in ['containers', 'initContainers']:
+        for c in spec[s]:
+            arg = Spec.from_resource(man)
+            arg.container = c['name']
+            assert kubeyaml.find_container(arg, man) is not None
+
 
 image_values = images_with_tag.map(lambda image: {'image': image})
 named_images_values = strats.dictionaries(keys=dns_labels, values=image_values)
