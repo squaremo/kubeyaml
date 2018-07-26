@@ -169,8 +169,16 @@ def test_includes_all_containers(man):
             assert kubeyaml.find_container(arg, man) is not None
 
 
-image_values = images_with_tag.map(lambda image: {'image': image})
-named_images_values = strats.dictionaries(keys=dns_labels, values=image_values)
+def image_values(images):
+    return images.map(lambda image: {'image': image})
+def image_tag_values(tags):
+    return strats.builds(lambda n, t: {'image': n, 'tag': t}, image_names, tags)
+def named_image_values(image_values):
+    return strats.dictionaries(keys=dns_labels, values=image_values)
+
+tagged_image_values = image_values(images_with_tag) | image_tag_values(image_tags)
+untagged_image_values = image_values(image_names) | image_tag_values(strats.just(''))
+all_image_values = tagged_image_values | untagged_image_values | named_image_values(tagged_image_values | untagged_image_values)
 
 def destructive_merge(dict1, dict2):
     dict1.update(dict2)
@@ -181,24 +189,35 @@ values_noise = strats.deferred(lambda: strats.dictionaries(
     values=values_noise | strats.integers() | strats.lists(values_noise) |
     strats.booleans() | strats.text(printable)))
 
-custom_resource_values = strats.builds(destructive_merge, image_values | named_images_values, values_noise)
+def custom_resource_values(values):
+    return strats.builds(destructive_merge, values, values_noise)
 
 @composite
-def custom_resources(draw):
+def custom_resources(draw, image_values):
     kind, ns, name = draw(ids(custom_kinds))
     base = resource(kind, ns, name)
     chart_name = draw(dns_labels) # close enough
     base['spec'] = {
         'chartGitPath': chart_name,
-        'values': draw(custom_resource_values),
+        'values': draw(custom_resource_values(image_values)),
     }
     return base
 
-workload_resources = controller_resources() | custom_resources()
+workload_resources = controller_resources() | custom_resources(all_image_values)
 other_resources = strats.builds(resource_from_tuple, ids(other_kinds))
 
 resources = workload_resources | other_resources
 documents = resources | strats.builds(list_document, strats.lists(resources, max_size=6))
+
+@given(custom_resources(tagged_image_values | named_image_values(tagged_image_values)))
+def test_custom_values_tagged(man):
+    for c in kubeyaml.containers(man):
+        image, tag = c['image'].split(':')
+
+@given(custom_resources(untagged_image_values | named_image_values(untagged_image_values)))
+def test_custom_values_untagged(man):
+    for c in kubeyaml.containers(man):
+        assert ':' not in c['image']
 
 class Spec:
     def __init__(self, kind=None, namespace=None, name=None):

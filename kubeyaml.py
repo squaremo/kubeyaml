@@ -153,6 +153,12 @@ def mappings(values):
 # There are different ways of interpreting FluxHelmRelease values as
 # images, and we have to sniff to see which to use.
 def fluxhelmrelease_containers(manifest):
+    def get_image(values):
+        image = values['image']
+        if 'tag' in values and values['tag'] != '':
+            image = '%s:%s' % (image, values['tag'])
+        return image
+
     values = manifest['spec']['values']
     # Easiest one: the values section has a key called `image`, which
     # has the image used somewhere in the templates. Since we don't
@@ -160,7 +166,7 @@ def fluxhelmrelease_containers(manifest):
     if 'image' in values:
         return  [{
             'name': FHR_CONTAINER,
-            'image': manifest['spec']['values']['image']
+            'image': get_image(values),
         }]
     # Second easiest: if there's at least one dict in values that has
     # a key `image`, then all such dicts are treated as containers,
@@ -168,17 +174,29 @@ def fluxhelmrelease_containers(manifest):
     containers = []
     for k, v in mappings(values):
         if 'image' in v:
-            containers.append({'name': k, 'image': v['image']})
+            containers.append({'name': k, 'image': get_image(v)})
     return containers
 
 def set_fluxhelmrelease_container(manifest, container, image):
+    def set_image(values):
+        if 'tag' in values:
+            tag = ''
+            try:
+                im, tag = image.split(':')
+            except ValueError:
+                pass
+            values['image'] = im
+            values['tag'] = tag
+        else:
+            values['image'] = image
+
     values = manifest['spec']['values']
     if 'image' in values:
-        values['image'] = image
+        set_image(values)
         return
     for k, v in mappings(values):
         if k == container['name'] and 'image' in v:
-            v['image'] = image
+            set_image(v)
             return
     raise NotFound
 
