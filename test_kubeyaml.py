@@ -5,6 +5,8 @@ from hypothesis import reproduce_failure
 from hypothesis.strategies import composite
 from ruamel.yaml.compat import StringIO
 import string
+import copy
+import collections
 
 def strip(s):
     return s.strip()
@@ -173,11 +175,13 @@ def image_values(images):
     return images.map(lambda image: {'image': image})
 def image_tag_values(tags):
     return strats.builds(lambda n, t: {'image': n, 'tag': t}, image_names, tags)
+def image_obj_values(tags):
+    return strats.builds(lambda n, t: {'image': {'repository': n, 'tag': t}}, image_names, tags)
 def named_image_values(image_values):
     return strats.dictionaries(keys=dns_labels, values=image_values)
 
-tagged_image_values = image_values(images_with_tag) | image_tag_values(image_tags)
-untagged_image_values = image_values(image_names) | image_tag_values(strats.just(''))
+tagged_image_values = image_values(images_with_tag) | image_tag_values(image_tags) # | image_obj_values(image_tags)
+untagged_image_values = image_values(image_names) | image_tag_values(strats.just('')) # | image_obj_values(strats.just(''))
 all_image_values = tagged_image_values | untagged_image_values | named_image_values(tagged_image_values | untagged_image_values)
 
 def destructive_merge(dict1, dict2):
@@ -257,6 +261,21 @@ def test_manifests(doc):
     for man in kubeyaml.manifests(doc):
         assert man['kind'] != 'List'
 
+def check_structure(before, after):
+    """A helper that checks whether the structure of two values differ, so
+    we can see that e.g., setting the image doesn't upset which keys
+    and other values are there.
+    """
+    if isinstance(before, collections.Mapping):
+        assert isinstance(after, collections.Mapping)
+        for k in before:
+            assert k in after
+            check_structure(before[k], after[k])
+        for k in after:
+            assert k in before
+    else:
+        assert not isinstance(after, collections.Mapping)
+
 @given(workload_resources, images_with_tag, strats.data())
 def test_image_update(man, image, data):
     cs = kubeyaml.containers(man)
@@ -268,12 +287,14 @@ def test_image_update(man, image, data):
     args.container = cs[ind]['name']
 
     found = False
+    man1 = copy.deepcopy(man)
     for out in kubeyaml.update_image(args, [man]):
         found = True
         assert(kubeyaml.match_manifest(args, out))
         outcs = kubeyaml.containers(out)
         assert(len(outcs) == len(cs))
         assert(outcs[ind]['image'] == image)
+        check_structure(man, man1)
     assert(found)
 
 def comment_yaml(draw, yamlstr):
