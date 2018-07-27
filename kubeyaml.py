@@ -155,6 +155,9 @@ def mappings(values):
 def fluxhelmrelease_containers(manifest):
     def get_image(values):
         image = values['image']
+        if isinstance(image, collections.Mapping) and 'repository' in image and 'tag' in image:
+            values = image
+            image = image['repository']
         if 'tag' in values and values['tag'] != '':
             image = '%s:%s' % (image, values['tag'])
         return image
@@ -177,18 +180,25 @@ def fluxhelmrelease_containers(manifest):
             containers.append({'name': k, 'image': get_image(v)})
     return containers
 
-def set_fluxhelmrelease_container(manifest, container, image):
+def set_fluxhelmrelease_container(manifest, container, replace):
     def set_image(values):
+        image = values['image']
+        imageKey = 'image'
+
+        if isinstance(image, collections.Mapping) and 'repository' in image and 'tag' in image:
+            values = image
+            imageKey = 'repository'
+
         if 'tag' in values:
-            tag = ''
+            im, tag = replace, ''
             try:
-                im, tag = image.split(':')
+                im, tag = replace.split(':')
             except ValueError:
                 pass
-            values['image'] = im
+            values[imageKey] = im
             values['tag'] = tag
         else:
-            values['image'] = image
+            values[imageKey] = replace
 
     values = manifest['spec']['values']
     if 'image' in values:

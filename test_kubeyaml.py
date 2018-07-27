@@ -180,8 +180,8 @@ def image_obj_values(tags):
 def named_image_values(image_values):
     return strats.dictionaries(keys=dns_labels, values=image_values)
 
-tagged_image_values = image_values(images_with_tag) | image_tag_values(image_tags) # | image_obj_values(image_tags)
-untagged_image_values = image_values(image_names) | image_tag_values(strats.just('')) # | image_obj_values(strats.just(''))
+tagged_image_values = image_values(images_with_tag) | image_tag_values(image_tags) | image_obj_values(image_tags)
+untagged_image_values = image_values(image_names) | image_tag_values(strats.just('')) | image_obj_values(strats.just(''))
 all_image_values = tagged_image_values | untagged_image_values | named_image_values(tagged_image_values | untagged_image_values)
 
 def destructive_merge(dict1, dict2):
@@ -276,7 +276,7 @@ def check_structure(before, after):
     else:
         assert not isinstance(after, collections.Mapping)
 
-@given(workload_resources, images_with_tag, strats.data())
+@given(workload_resources, images_with_tag | image_names, strats.data())
 def test_image_update(man, image, data):
     cs = kubeyaml.containers(man)
     assume(len(cs) > 0)
@@ -286,16 +286,17 @@ def test_image_update(man, image, data):
     ind = data.draw(strats.integers(min_value=0, max_value=len(cs) - 1))
     args.container = cs[ind]['name']
 
-    found = False
     man1 = copy.deepcopy(man)
+    man2 = None
     for out in kubeyaml.update_image(args, [man]):
-        found = True
-        assert(kubeyaml.match_manifest(args, out))
-        outcs = kubeyaml.containers(out)
-        assert(len(outcs) == len(cs))
-        assert(outcs[ind]['image'] == image)
-        check_structure(man, man1)
-    assert(found)
+        man2 = out
+
+    assert man2 is not None
+    assert kubeyaml.match_manifest(args, man2)
+    outcs = kubeyaml.containers(man2)
+    assert len(outcs) == len(cs)
+    assert outcs[ind]['image'] == image
+    check_structure(man1, man2)
 
 def comment_yaml(draw, yamlstr):
     """Serialise the values and add comments"""
