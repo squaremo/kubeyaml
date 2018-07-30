@@ -162,19 +162,19 @@ def fluxhelmrelease_containers(manifest):
             image = '%s:%s' % (image, values['tag'])
         return image
 
+    containers = []
     values = manifest['spec']['values']
     # Easiest one: the values section has a key called `image`, which
     # has the image used somewhere in the templates. Since we don't
     # know which container it appears in, it gets a standard name.
     if 'image' in values:
-        return  [{
+        containers =  [{
             'name': FHR_CONTAINER,
             'image': get_image(values),
         }]
     # Second easiest: if there's at least one dict in values that has
     # a key `image`, then all such dicts are treated as containers,
     # named for their key.
-    containers = []
     for k, v in mappings(values):
         if 'image' in v:
             containers.append({'name': k, 'image': get_image(v)})
@@ -201,7 +201,7 @@ def set_fluxhelmrelease_container(manifest, container, replace):
             values[imageKey] = replace
 
     values = manifest['spec']['values']
-    if 'image' in values:
+    if container['name'] == FHR_CONTAINER and 'image' in values:
         set_image(values)
         return
     for k, v in mappings(values):

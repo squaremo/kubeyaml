@@ -170,31 +170,63 @@ def test_includes_all_containers(man):
             arg.container = c['name']
             assert kubeyaml.find_container(arg, man) is not None
 
-
-def image_values(images):
-    return images.map(lambda image: {'image': image})
-def image_tag_values(tags):
-    return strats.builds(lambda n, t: {'image': n, 'tag': t}, image_names, tags)
-def image_obj_values(tags):
-    return strats.builds(lambda n, t: {'image': {'repository': n, 'tag': t}}, image_names, tags)
-def named_image_values(image_values):
-    return strats.dictionaries(keys=dns_labels, values=image_values)
-
-tagged_image_values = image_values(images_with_tag) | image_tag_values(image_tags) | image_obj_values(image_tags)
-untagged_image_values = image_values(image_names) | image_tag_values(strats.just('')) | image_obj_values(strats.just(''))
-all_image_values = tagged_image_values | untagged_image_values | named_image_values(tagged_image_values | untagged_image_values)
+## FluxHelmRelease interpretation
 
 def destructive_merge(dict1, dict2):
     dict1.update(dict2)
     return dict1
+
+def lift_containers(images):
+    cs = [{k: images[k]['_containers'][0][kubeyaml.FHR_CONTAINER]} for k in images]
+    images['_containers'] = cs
+    return images
+
+def combine_containers(toplevel, subfields):
+    cs = []
+    ims = {}
+    if toplevel is not None:
+        ims = toplevel
+        cs = toplevel['_containers']
+    cs = cs + subfields['_containers']
+    destructive_merge(ims, subfields)
+    ims['_containers'] = cs
+    return ims
+
+# These all return a dict specifying a "container" using an image,
+# with an entry `'_containers'` saying what is being specified. E.g.,
+# {'foo': {'image': 'foobar', 'tag': 'v1'}, '_containers': [{'foo': 'foobar/v1'}]}
+image_only_values = (image_names | images_with_tag).map(lambda image: {'image': image, '_containers': [{kubeyaml.FHR_CONTAINER: image}]})
+image_tag_values = strats.builds(lambda n, t: {'image': n, 'tag': t, '_containers': [{kubeyaml.FHR_CONTAINER: '%s:%s' % (n, t)}]}, image_names, strats.just('') | image_tags)
+image_obj_values = strats.builds(lambda n, t: {'image': {'repository': n, 'tag': t}, '_containers': [{kubeyaml.FHR_CONTAINER: '%s:%s' % (n, t)}]}, image_names, strats.just('') | image_tags)
+# One of the above
+toplevel_image_values = image_only_values | image_tag_values | image_obj_values
+# Some of the above, in fields
+named_image_values = strats.dictionaries(keys=dns_labels, values=toplevel_image_values).map(lift_containers)
+# Combo of top-level image, and images in subfields
+all_image_values = strats.builds(combine_containers, strats.just(None) | toplevel_image_values, named_image_values)
 
 values_noise = strats.deferred(lambda: strats.dictionaries(
     keys=dns_labels,
     values=values_noise | strats.integers() | strats.lists(values_noise) |
     strats.booleans() | strats.text(printable)))
 
+@given(all_image_values, values_noise)
+def test_extract_custom_containers(image_values, noise):
+    assume(len(set(image_values) & set(noise)) == 0)
+    containers = image_values['_containers']
+    custom_values = destructive_merge(image_values, noise)
+    kind, ns, name = 'FluxHelmRelease', 'default', 'release'
+    chart_name = 'chart'
+    res = resource(kind, ns, name)
+    res['spec'] = {
+        'chartGitPath': chart_name,
+        'values': custom_values,
+    }
+    extracted_containers = kubeyaml.containers(res)
+    assert len(containers) == len(extracted_containers)
+
 def custom_resource_values(values):
-    return strats.builds(destructive_merge, values, values_noise)
+    return strats.builds(destructive_merge, values_noise, values)
 
 @composite
 def custom_resources(draw, image_values):
@@ -203,25 +235,17 @@ def custom_resources(draw, image_values):
     chart_name = draw(dns_labels) # close enough
     base['spec'] = {
         'chartGitPath': chart_name,
-        'values': draw(custom_resource_values(image_values)),
+        'values': draw(custom_resource_values(all_image_values)),
     }
     return base
+
+# --- /FluxHelmRelease interpretation
 
 workload_resources = controller_resources() | custom_resources(all_image_values)
 other_resources = strats.builds(resource_from_tuple, ids(other_kinds))
 
 resources = workload_resources | other_resources
 documents = resources | strats.builds(list_document, strats.lists(resources, max_size=6))
-
-@given(custom_resources(tagged_image_values | named_image_values(tagged_image_values)))
-def test_custom_values_tagged(man):
-    for c in kubeyaml.containers(man):
-        image, tag = c['image'].split(':')
-
-@given(custom_resources(untagged_image_values | named_image_values(untagged_image_values)))
-def test_custom_values_untagged(man):
-    for c in kubeyaml.containers(man):
-        assert ':' not in c['image']
 
 class Spec:
     def __init__(self, kind=None, namespace=None, name=None):
