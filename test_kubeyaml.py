@@ -1,7 +1,7 @@
 import kubeyaml
 
 from hypothesis import given, note, assume, strategies as strats
-from hypothesis import reproduce_failure
+from hypothesis import reproduce_failure, settings, HealthCheck
 from hypothesis.strategies import composite
 from ruamel.yaml.compat import StringIO
 import string
@@ -210,6 +210,7 @@ values_noise = strats.deferred(lambda: strats.dictionaries(
     values=values_noise | strats.integers() | strats.lists(values_noise) |
     strats.booleans() | strats.text(printable)))
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(all_image_values, values_noise)
 def test_extract_custom_containers(image_values, noise):
     assume(len(set(image_values) & set(noise)) == 0)
@@ -382,6 +383,7 @@ def test_ident_apply(mans, data):
     note('Ruameled: \n%s\n' % outfile.getvalue())
     assert originalstr == outfile.getvalue()
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(strats.lists(elements=documents, min_size=1, max_size=5), strats.data())
 def test_update_image_apply(docs, data):
     originals = [man for doc in docs
