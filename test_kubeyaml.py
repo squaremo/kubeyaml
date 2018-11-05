@@ -71,7 +71,7 @@ images_with_tag = strats.builds(
 # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.9/
 
 controller_kinds = ['Deployment', 'DaemonSet', 'StatefulSet', 'CronJob']
-custom_kinds = ['FluxHelmRelease']
+custom_kinds = ['FluxHelmRelease', 'HelmRelease']
 other_kinds = ['Service', 'ConfigMap', 'Secret']
 # For checking against
 workload_kinds = controller_kinds + custom_kinds
@@ -234,7 +234,7 @@ def custom_resources(draw, image_values):
     kind, ns, name = draw(ids(custom_kinds))
     base = resource(kind, ns, name)
     chart_name = draw(dns_labels) # close enough
-    base['spec'] = {
+    base['spec'] = { # this is the spec for a FluxHelmRelease, but it's OK for HelmRelease too
         'chartGitPath': chart_name,
         'values': draw(custom_resource_values(all_image_values)),
     }

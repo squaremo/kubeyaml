@@ -128,7 +128,7 @@ def podspec(manifest):
     return spec
 
 def containers(manifest):
-    if manifest['kind'] == 'FluxHelmRelease':
+    if manifest['kind'] in ['FluxHelmRelease', 'HelmRelease']:
         return fluxhelmrelease_containers(manifest)
     spec = podspec(manifest)
     return spec.get('containers', []) + spec.get('initContainers', [])
@@ -142,7 +142,7 @@ def find_container(spec, manifest):
     return None
 
 def set_container_image(manifest, container, image):
-    if manifest['kind'] == 'FluxHelmRelease':
+    if manifest['kind'] in ['FluxHelmRelease', 'HelmRelease']:
         set_fluxhelmrelease_container(manifest, container, image)
     else:
         container['image'] = image
