@@ -192,7 +192,12 @@ def set_fluxhelmrelease_container(manifest, container, replace):
         if 'tag' in values:
             im, tag = replace, ''
             try:
-                im, tag = replace.split(':')
+                segments = replace.split(':')
+                if len(segments) == 2:
+                    im, tag = segments
+                elif len(segments) == 3:
+                    im = ':'.join(segments[:2])
+                    tag = segments[2]
             except ValueError:
                 pass
             values[imageKey] = im
