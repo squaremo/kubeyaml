@@ -29,7 +29,7 @@ hostnames_without_port = strats.builds('.'.join,
     strats.lists(elements=host_components, min_size=1, max_size=6))
 
 hostnames_with_port = strats.builds(
-    lambda h, p: str(h, ':', p),
+    lambda h, p: str(h)+':'+str(p),
     hostnames_without_port, port_numbers)
 
 hostnames = hostnames_without_port | hostnames_with_port
@@ -41,7 +41,7 @@ image_separators = strats.just('.')  | \
                    strats.just('__') | \
                    strats.integers(min_value=1, max_value=5).map(lambda n: '-' * n)
 
-image_tags = strats.from_regex(r"^[\w][\w.-]{0,127}$").map(strip)
+image_tags = strats.from_regex(r"^[a-z][\w.-]{0,127}$").map(strip)
 
 @composite
 def image_components(draw):
@@ -54,14 +54,18 @@ def image_components(draw):
         s = s + sep + c
     return s
 
-image_names = strats.builds(lambda cs: '/'.join(cs),
+host_segments = strats.just([]) | hostnames.map(lambda x: [x])
+image_names = strats.builds(lambda host, cs: '/'.join(host + cs),
+                            host_segments,
                             strats.lists(elements=image_components(),
                                          min_size=1, max_size=6))
 
 # This is somewhat faster, if we don't care about having realistic
 # image refs
 sloppy_image_names = strats.text(string.ascii_letters + '-/_', min_size=1, max_size=255)
-image_names = sloppy_image_names
+# NB override image_names
+image_names = strats.builds(lambda host, cs: '/'.join(host + [cs]),
+                            host_segments, sloppy_image_names)
 
 images_with_tag = strats.builds(
     lambda name, tag: name + ':' + tag,
@@ -194,10 +198,10 @@ def combine_containers(toplevel, subfields):
 
 # These all return a dict specifying a "container" using an image,
 # with an entry `'_containers'` saying what is being specified. E.g.,
-# {'foo': {'image': 'foobar', 'tag': 'v1'}, '_containers': [{'foo': 'foobar/v1'}]}
+# {'foo': {'image': 'foobar', 'tag': 'v1'}, '_containers': [{'foo': 'foobar:v1'}]}
 image_only_values = (image_names | images_with_tag).map(lambda image: {'image': image, '_containers': [{kubeyaml.FHR_CONTAINER: image}]})
-image_tag_values = strats.builds(lambda n, t: {'image': n, 'tag': t, '_containers': [{kubeyaml.FHR_CONTAINER: '%s:%s' % (n, t)}]}, image_names, strats.just('') | image_tags)
-image_obj_values = strats.builds(lambda n, t: {'image': {'repository': n, 'tag': t}, '_containers': [{kubeyaml.FHR_CONTAINER: '%s:%s' % (n, t)}]}, image_names, strats.just('') | image_tags)
+image_tag_values = strats.builds(lambda n, t: {'image': n, 'tag': t, '_containers': [{kubeyaml.FHR_CONTAINER: '%s:%s' % (n, t)}]}, image_names, image_tags)
+image_obj_values = strats.builds(lambda n, t: {'image': {'repository': n, 'tag': t}, '_containers': [{kubeyaml.FHR_CONTAINER: '%s:%s' % (n, t)}]}, image_names, image_tags)
 # One of the above
 toplevel_image_values = image_only_values | image_tag_values | image_obj_values
 # Some of the above, in fields
@@ -223,8 +227,30 @@ def test_extract_custom_containers(image_values, noise):
         'chartGitPath': chart_name,
         'values': custom_values,
     }
-    extracted_containers = kubeyaml.containers(res)
-    assert len(containers) == len(extracted_containers)
+
+    original = {container: image for c in containers for container, image in c.items()}
+    extracted = {c['name']: c['image'] for c in kubeyaml.containers(res)}
+    assert original == extracted
+
+@given(all_image_values, values_noise)
+def test_set_custom_container_preserves_structure(image_values, noise):
+    assume(len(set(image_values) & set(noise)) == 0)
+    custom_values = destructive_merge(image_values, noise)
+    original = copy.deepcopy(custom_values)
+
+    kind, ns, name = 'FluxHelmRelease', 'default', 'release'
+    chart_name = 'chart'
+    res = resource(kind, ns, name)
+    res['spec'] = {
+        'chartGitPath': chart_name,
+        'values': custom_values,
+    }
+
+    for c in image_values['_containers']:
+        for name, image in c.items():
+            # this should be an identity: set the container to what it was before
+            kubeyaml.set_fluxhelmrelease_container(res, {'name': name}, image)
+            assert original == res['spec']['values']
 
 def custom_resource_values(values):
     return strats.builds(destructive_merge, values_noise, values)
