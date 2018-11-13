@@ -232,6 +232,7 @@ def test_extract_custom_containers(image_values, noise):
     extracted = {c['name']: c['image'] for c in kubeyaml.containers(res)}
     assert original == extracted
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(all_image_values, values_noise)
 def test_set_custom_container_preserves_structure(image_values, noise):
     assume(len(set(image_values) & set(noise)) == 0)
