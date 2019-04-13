@@ -39,6 +39,7 @@ def parse_args():
 def yaml():
     y = YAML()
     y.explicit_start = True
+    y.explicit_end = False
     y.preserve_quotes = True
     return y
 
@@ -46,12 +47,23 @@ def bail(reason):
         sys.stderr.write(reason); sys.stderr.write('\n')
         sys.exit(2)
 
+class AlwaysFalse(object):
+    def __init__(self):
+        pass
+
+    def __get__(self, instance, owner):
+        return False
+
+    def __set__(self, instance, value):
+        pass
+
 def apply_to_yaml(fn, infile, outfile):
     # fn :: iterator a -> iterator b
     y = yaml()
+    # Hack to make sure no end-of-document ("...") is ever added
+    y.Emitter.open_ended = AlwaysFalse()
     docs = y.load_all(infile)
-    for doc in fn(docs):
-        y.dump(doc, outfile)
+    y.dump_all(fn(docs), outfile)
 
 def update_image(args, docs):
     """Update the manifest specified by args, in the stream of docs"""
