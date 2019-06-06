@@ -113,7 +113,7 @@ def update_annotations(spec, docs):
         raise NotFound()
 
 def manifests(doc):
-    if doc['kind'] == 'List':
+    if doc['kind'].endswith('List'):
         for m in doc['items']:
             yield m
     else:
