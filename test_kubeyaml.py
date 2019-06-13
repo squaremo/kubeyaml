@@ -299,6 +299,7 @@ def test_match_self(man):
     spec = Spec.from_resource(man)
     assert kubeyaml.match_manifest(spec, man)
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(workload_resources, strats.data())
 def test_find_container(man, data):
     cs = kubeyaml.containers(man)

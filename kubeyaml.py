@@ -2,6 +2,7 @@ import sys
 import argparse
 import functools
 import collections
+import re
 from ruamel.yaml import YAML
 
 # The container name, by proclamation, used for an image supplied in a
@@ -170,6 +171,8 @@ def fluxhelmrelease_containers(manifest):
         if isinstance(image, collections.Mapping) and 'repository' in image and 'tag' in image:
             values = image
             image = image['repository']
+        if 'registry' in values and values['registry'] != '':
+            image = '%s/%s' % (values['registry'], image)
         if 'tag' in values and values['tag'] != '':
             image = '%s:%s' % (image, values['tag'])
         return image
@@ -193,26 +196,55 @@ def fluxhelmrelease_containers(manifest):
     return containers
 
 def set_fluxhelmrelease_container(manifest, container, replace):
+    # The logic within this method (almost) equals:
+    # https://github.com/weaveworks/flux/blob/5b15a94397d58b69a2daedae3bcc377e4901435b/image/image.go#L136
+    def parse_ref():
+        reg, im, tag = '', '', ''
+        try:
+            segments = replace.split('/')
+            if len(segments) == 1:
+                im = replace
+            elif len(segments) == 2:
+                domainComponent = '([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])'
+                domain = 'localhost|(%s([.]%s)+)(:[0-9]+)?' % (domainComponent, domainComponent)
+                if re.fullmatch(domain, segments[0]):
+                    reg = segments[0]
+                    im = segments[1]
+                else:
+                    im = replace
+            else:
+                reg = segments[0]
+                im = '/'.join(segments[1:])
+
+            segments = im.split(':')
+            if len(segments) == 2:
+                im, tag = segments
+            elif len(segments) == 3:
+                im = ':'.join(segments[:2])
+                tag = segments[2]
+        except ValueError:
+            pass
+        return reg, im, tag
+
     def set_image(values):
         image = values['image']
         imageKey = 'image'
 
-        if isinstance(image, collections.Mapping) and 'repository' in image and 'tag' in image:
+        if isinstance(image, collections.Mapping) and 'repository' in image:
             values = image
             imageKey = 'repository'
 
-        if 'tag' in values:
-            im, tag = replace, ''
-            try:
-                segments = replace.split(':')
-                if len(segments) == 2:
-                    im, tag = segments
-                elif len(segments) == 3:
-                    im = ':'.join(segments[:2])
-                    tag = segments[2]
-            except ValueError:
-                pass
+        reg, im, tag = parse_ref()
+
+        if 'registry' in values and 'tag' in values:
+            values['registry'] = reg
             values[imageKey] = im
+            values['tag'] = tag
+        elif 'registry' in values:
+            values['registry'] = reg
+            values[imageKey] = ':'.join(filter(None, [im, tag]))
+        elif 'tag' in values:
+            values[imageKey] = '/'.join(filter(None, [reg, im]))
             values['tag'] = tag
         else:
             values[imageKey] = replace
