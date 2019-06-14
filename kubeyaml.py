@@ -168,7 +168,7 @@ def mappings(values):
 def fluxhelmrelease_containers(manifest):
     def get_image(values):
         image = values['image']
-        if isinstance(image, collections.Mapping) and 'repository' in image and 'tag' in image:
+        if isinstance(image, collections.Mapping) and 'repository' in image:
             values = image
             image = image['repository']
         if 'registry' in values and values['registry'] != '':
