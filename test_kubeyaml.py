@@ -47,7 +47,7 @@ image_tags = strats.from_regex(r"^[a-z][\w.-]{0,127}$").map(strip)
 def image_components(draw):
     bits = draw(strats.lists(
         elements=strats.text(alphabet=alphanumerics, min_size=1),
-        min_size=1, max_size=255))
+        min_size=1, max_size=16))
     s = bits[0]
     for c in bits[1:]:
         sep = draw(image_separators)
@@ -214,7 +214,7 @@ all_image_values = strats.builds(combine_containers, strats.just(None) | topleve
 values_noise = strats.deferred(lambda: strats.dictionaries(
     keys=dns_labels,
     values=values_noise | strats.integers() | strats.lists(values_noise) |
-    strats.booleans() | strats.text(printable)))
+    strats.booleans() | strats.text(printable), max_size=3))
 
 @settings(suppress_health_check=[HealthCheck.too_slow])
 @given(all_image_values, values_noise)
@@ -265,7 +265,7 @@ def custom_resources(draw, image_values):
     chart_name = draw(dns_labels) # close enough
     base['spec'] = { # this is the spec for a FluxHelmRelease, but it's OK for HelmRelease too
         'chartGitPath': chart_name,
-        'values': draw(custom_resource_values(all_image_values)),
+        'values': draw(custom_resource_values(image_values)),
     }
     return base
 
@@ -393,6 +393,7 @@ def comment_yaml(draw, yamlstr):
         prevLine = line
     return res
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(strats.lists(elements=documents, max_size=5), strats.data())
 def test_ident_apply(mans, data):
     yaml = kubeyaml.yaml()
