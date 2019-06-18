@@ -79,6 +79,8 @@ custom_kinds = ['FluxHelmRelease', 'HelmRelease']
 other_kinds = ['Service', 'ConfigMap', 'Secret']
 # For checking against
 workload_kinds = controller_kinds + custom_kinds
+all_kinds = controller_kinds + custom_kinds + other_kinds
+list_kinds = strats.sampled_from(all_kinds + ['']).map(lambda k: '%sList' % k)
 
 namespaces = strats.just('') | dns_labels
 
@@ -98,9 +100,9 @@ def resource_from_tuple(t):
     k, ns, n = t
     return resource(k, ns, n)
 
-def list_document(resources):
+def list_document(kind, resources):
     return {
-        'kind': 'List',
+        'kind': kind,
         'items': resources,
     }
 
@@ -273,7 +275,7 @@ workload_resources = controller_resources() | custom_resources(all_image_values)
 other_resources = strats.builds(resource_from_tuple, ids(other_kinds))
 
 resources = workload_resources | other_resources
-documents = resources | strats.builds(list_document, strats.lists(resources, max_size=6))
+documents = resources | strats.builds(list_document, list_kinds, strats.lists(resources, max_size=6))
 
 class Spec:
     def __init__(self, kind=None, namespace=None, name=None):
@@ -308,10 +310,11 @@ def test_find_container(man, data):
 
     assert kubeyaml.find_container(spec, man) is not None
 
+# Check that manifests() recurses into List resources
 @given(documents)
 def test_manifests(doc):
     for man in kubeyaml.manifests(doc):
-        assert man['kind'] != 'List'
+        assert not man['kind'].endswith('List')
 
 def check_structure(before, after):
     """A helper that checks whether the structure of two values differ, so
