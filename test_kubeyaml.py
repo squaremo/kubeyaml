@@ -62,10 +62,13 @@ exact_image_names = strats.builds('/'.join, strats.lists(elements=image_componen
 # This is somewhat faster, if we don't care about having realistic
 # image refs
 sloppy_image_names = strats.text(string.ascii_letters + '-/_', min_size=1, max_size=255).map(strip)
+sloppy_image_names_with_host = strats.builds(
+    lambda host, name: host + '/' + name,
+    hostnames, sloppy_image_names)
 image_tags = strats.from_regex(r"^[a-z][\w.-]{0,127}$").map(strip)
 
 # NB select the default image name format to use
-image_names = sloppy_image_names
+image_names = sloppy_image_names | sloppy_image_names_with_host
 
 images_with_tag = strats.builds(
     lambda name, tag: name + ':' + tag,
@@ -207,10 +210,11 @@ image_registry_values = strats.builds(lambda r, n, t: {'registry': r, 'image': '
 image_registry_tag_values = strats.builds(lambda r, n, t: {'registry': r, 'image': n, 'tag': t, '_containers': [{kubeyaml.FHR_CONTAINER: '%s/%s:%s' % (r, n, t)}]}, hostnames, exact_image_names, image_tags)
 image_obj_values = strats.builds(lambda n, t: {'image': {'repository': n, 'tag': t}, '_containers': [{kubeyaml.FHR_CONTAINER: '%s:%s' % (n, t)}]}, image_names, image_tags)
 image_obj_repository_values = (image_names | images_with_tag).map(lambda image: {'image': {'repository': image}, '_containers': [{kubeyaml.FHR_CONTAINER: image}]})
-image_obj_registry_values = strats.builds(lambda r, n, t: {'image': {'registry': r, 'repository': n, 'tag': t}, '_containers': [{kubeyaml.FHR_CONTAINER: '%s/%s:%s' % (r, n, t)}]}, hostnames, exact_image_names, image_tags)
+image_obj_registry_tag_values = strats.builds(lambda r, n, t: {'image': {'registry': r, 'repository': n, 'tag': t}, '_containers': [{kubeyaml.FHR_CONTAINER: '%s/%s:%s' % (r, n, t)}]}, hostnames, exact_image_names, image_tags)
+image_obj_registry_repository_values = strats.builds(lambda r, n, t: {'image': {'registry': r, 'repository': '%s:%s' % (n, t)}, '_containers': [{kubeyaml.FHR_CONTAINER: '%s/%s:%s' % (r, n, t)}]}, hostnames, exact_image_names, image_tags)
 
 # One of the above
-toplevel_image_values = image_only_values | image_tag_values | image_registry_values | image_registry_tag_values | image_obj_values | image_obj_registry_values
+toplevel_image_values = image_only_values | image_tag_values | image_registry_values | image_registry_tag_values | image_obj_values | image_obj_registry_tag_values | image_obj_registry_repository_values
 # Some of the above, in fields
 named_image_values = strats.dictionaries(keys=dns_labels, values=toplevel_image_values).map(lift_containers)
 # Combo of top-level image, and images in subfields
