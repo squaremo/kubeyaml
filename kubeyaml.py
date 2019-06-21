@@ -206,7 +206,7 @@ def set_fluxhelmrelease_container(manifest, container, replace):
                 im = replace
             elif len(segments) == 2:
                 domainComponent = '([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])'
-                domain = 'localhost|(%s([.]%s)+)(:[0-9]+)?' % (domainComponent, domainComponent)
+                domain = '(localhost|(%s([.]%s)+))(:[0-9]+)?' % (domainComponent, domainComponent)
                 if re.fullmatch(domain, segments[0]):
                     reg = segments[0]
                     im = segments[1]

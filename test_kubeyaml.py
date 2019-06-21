@@ -36,8 +36,9 @@ dns_labels = strats.from_regex(
 host_components = strats.from_regex(r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,125}[a-zA-Z0-9])?$").map(strip)
 port_numbers = strats.integers(min_value=1, max_value=32767)
 
-hostnames_without_port = strats.builds('.'.join,
-    strats.lists(elements=host_components, min_size=1, max_size=6))
+hostnames_without_port = strats.just('localhost') | \
+                         strats.builds('.'.join,
+                            strats.lists(elements=host_components, min_size=2, max_size=6))
 
 hostnames_with_port = strats.builds(
     lambda h, p: str(h)+':'+str(p),
@@ -54,11 +55,8 @@ image_separators = strats.just('.')  | \
 
 host_segments = strats.just([]) | hostnames.map(lambda x: [x])
 
-# This results in realistic image refs, we use a min_size of two for
-# test cases that make use of a hostname as the Docker image ref spec
-# has a limitation on images with a hostname that requires it to have
-# at least two elements if the hostname is not localhost.
-exact_image_names = strats.builds('/'.join, strats.lists(elements=image_components(), min_size=2, max_size=6))
+# This results in realistic image refs
+exact_image_names = strats.builds('/'.join, strats.lists(elements=image_components(), min_size=1, max_size=6))
 # This is somewhat faster, if we don't care about having realistic
 # image refs
 sloppy_image_names = strats.text(string.ascii_letters + '-/_', min_size=1, max_size=255).map(strip)
