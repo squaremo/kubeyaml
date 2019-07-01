@@ -6,7 +6,7 @@ RUN /pyinstaller/pyinstaller.sh --noconfirm --clean kubeyaml.py
 #RUN ls -R /src/
 #RUN cat /src/warn*.txt
 
-FROM alpine:3.6
+FROM alpine:3.9
 
 ENTRYPOINT ["/usr/lib/kubeyaml/kubeyaml"]
 COPY --from=pyinstaller /home/kubeyaml/dist/kubeyaml /usr/lib/kubeyaml
