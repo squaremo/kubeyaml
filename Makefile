@@ -15,4 +15,4 @@ clean:
 	touch $@
 
 test:
-	pytest --hypothesis-show-statistics
+	pytest --hypothesis-show-statistics test_*
