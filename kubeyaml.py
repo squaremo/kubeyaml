@@ -12,6 +12,9 @@ FHR_CONTAINER = 'chart-image'
 class NotFound(Exception):
     pass
 
+class UnresolvablePath(Exception):
+    pass
+
 def parse_args():
     p = argparse.ArgumentParser()
     subparsers = p.add_subparsers()
@@ -24,7 +27,7 @@ def parse_args():
     image.add_argument('--image', required=True)
     image.set_defaults(func=update_image)
 
-    def note(s):
+    def keyValuePair(s):
         k, v = s.split('=')
         return k, v
 
@@ -32,8 +35,15 @@ def parse_args():
     annotation.add_argument('--namespace', required=True)
     annotation.add_argument('--kind', required=True)
     annotation.add_argument('--name', required=True)
-    annotation.add_argument('notes', nargs='+', type=note)
+    annotation.add_argument('notes', nargs='+', type=keyValuePair)
     annotation.set_defaults(func=update_annotations)
+
+    set = subparsers.add_parser('set', help='update values by their dot notation paths')
+    set.add_argument('--namespace', required=True)
+    set.add_argument('--kind', required=True)
+    set.add_argument('--name', required=True)
+    set.add_argument('paths', nargs='+', type=keyValuePair)
+    set.set_defaults(func=set_paths)
 
     return p.parse_args()
 
@@ -110,6 +120,35 @@ def update_annotations(spec, docs):
                     found = True
                     break
         yield doc
+    if not found:
+        raise NotFound()
+
+def set_paths(spec, docs):
+    def set_path(d, path, value):
+        keys = path.split(".")
+        for k in keys[:-1]:
+            if k not in d:
+                return False
+            d = d[k]
+        if isinstance(d[keys[-1]], collections.Mapping):
+            return False
+        d[keys[-1]] = value
+        return True
+
+    found = False
+    unresolvable = list()
+    for doc in docs:
+        if not found:
+            for m in manifests(doc):
+                if match_manifest(spec, m):
+                    for k, v in spec.paths:
+                        if not set_path(m, k, v):
+                            unresolvable.append(k)
+                    found = True
+                    break
+        yield doc
+    if len(unresolvable):
+        raise UnresolvablePath(unresolvable)
     if not found:
         raise NotFound()
 
@@ -265,6 +304,8 @@ def main():
         apply_to_yaml(functools.partial(args.func, args), sys.stdin, sys.stdout)
     except NotFound:
         bail("manifest not found")
+    except UnresolvablePath as e:
+        bail("unable to resolve path(s):\n" + '\n'.join(e.args[0]))
 
 if __name__ == "__main__":
     main()
