@@ -153,6 +153,8 @@ def set_paths(spec, docs):
         raise NotFound()
 
 def manifests(doc):
+    if doc == None:
+        return collections.OrderedDict()
     if doc['kind'].endswith('List'):
         for m in doc['items']:
             yield m
