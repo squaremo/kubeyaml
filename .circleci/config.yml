@@ -29,9 +29,9 @@ jobs:
           command: |
             if [ -z "${CIRCLE_TAG}" -a "${CIRCLE_BRANCH}" == "master" ]; then
               docker login -u "$DOCKER_REGISTRY_USER" -p "$DOCKER_REGISTRY_PASSWORD" quay.io
-              docker tag "quay.io/squaremo/kubeyaml" \
-                         "quay.io/squaremo/kubeyaml:${CIRCLE_BRANCH}-${CIRCLE_SHA1}"
-              docker push "quay.io/squaremo/kubeyaml:${CIRCLE_BRANCH}-${CIRCLE_SHA1}"
+              docker tag "squaremo/kubeyaml" \
+                         "squaremo/kubeyaml:${CIRCLE_BRANCH}-${CIRCLE_SHA1}"
+              docker push "squaremo/kubeyaml:${CIRCLE_BRANCH}-${CIRCLE_SHA1}"
             fi
 
       - deploy:
@@ -39,8 +39,8 @@ jobs:
           command: |
             if echo "${CIRCLE_TAG}" | grep -Eq "^[0-9]+(\.[0-9]+)*(-[a-z]+)?$"; then
               docker login -u "$DOCKER_REGISTRY_USER" -p "$DOCKER_REGISTRY_PASSWORD" quay.io
-              docker tag quay.io/squaremo/kubeyaml "quay.io/squaremo/kubeyaml:${CIRCLE_TAG}"
-              docker push "quay.io/squaremo/kubeyaml:${CIRCLE_TAG}"
+              docker tag "squaremo/kubeyaml" "squaremo/kubeyaml:${CIRCLE_TAG}"
+              docker push "squaremo/kubeyaml:${CIRCLE_TAG}"
             fi
 
 workflows:
